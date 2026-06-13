@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Quotex Signals</title>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+  :root {
+    --bg: #0e1117;
+    --card-bg: #161b22;
+    --border: #2a2f3a;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --buy: #2ea043;
+    --sell: #da3633;
+    --expired: #444c56;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 16px;
+  }
+
+  h1 {
+    font-size: 20px;
+    margin: 0 0 16px 0;
+    text-align: center;
+  }
+
+  #status {
+    text-align: center;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 16px;
+  }
+
+  #signals {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-width: 480px;
+    margin: 0 auto;
+  }
+
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    transition: opacity 0.3s;
+  }
+
+  .card.expired {
+    opacity: 0.5;
+  }
+
+  .card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  .pair {
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .direction {
+    font-size: 14px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 6px;
+    color: #fff;
+  }
+
+  .direction.BUY { background: var(--buy); }
+  .direction.SELL { background: var(--sell); }
+
+  .details {
+    font-size: 13px;
+    color: var(--muted);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .status-badge {
+    display: inline-block;
+    margin-top: 8px;
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+
+  .status-badge.active {
+    background: rgba(46, 160, 67, 0.2);
+    color: var(--buy);
+  }
+
+  .status-badge.expired {
+    background: rgba(68, 76, 86, 0.3);
+    color: var(--muted);
+  }
+
+  .empty {
+    text-align: center;
+    color: var(--muted);
+    margin-top: 40px;
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+  <h1>Quotex Signals Dashboard</h1>
+  <div id="status">Connecting...</div>
+  <div id="signals"></div>
+  <div id="empty" class="empty">No signals yet. Waiting for live data...</div>
+
+<script>
+  const socket = io();
+  const signalsEl = document.getElementById('signals');
+  const statusEl = document.getElementById('status');
+  const emptyEl = document.getElementById('empty');
+
+  const signals = {}; // pair -> signal
+
+  socket.on('connect', () => {
+    statusEl.textContent = 'Connected — live';
+  });
+
+  socket.on('disconnect', () => {
+    statusEl.textContent = 'Disconnected — reconnecting...';
+  });
+
+  socket.on('init', (initialSignals) => {
+    initialSignals.forEach(s => { signals[s.pair] = s; });
+    render();
+  });
+
+  socket.on('signal', (signal) => {
+    signals[signal.pair] = signal;
+    render();
+  });
+
+  function formatTime(iso) {
+    const d = new Date(iso);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+
+  function render() {
+    const pairs = Object.keys(signals);
+    emptyEl.style.display = pairs.length === 0 ? 'block' : 'none';
+
+    signalsEl.innerHTML = pairs.map(pair => {
+      const s = signals[pair];
+      const isExpired = new Date(s.expiresAt).getTime() < Date.now();
+      return `
+        <div class="card ${isExpired ? 'expired' : ''}">
+          <div class="card-top">
+            <span class="pair">${s.pair}</span>
+            <span class="direction ${s.direction}">${s.direction}</span>
+          </div>
+          <div class="details">
+            <span>Price: ${s.price}</span>
+            <span>RSI: ${s.rsi}</span>
+            <span>Generated: ${formatTime(s.generatedAt)}</span>
+            <span>Valid for: ${s.validForMinutes} min (expires ${formatTime(s.expiresAt)})</span>
+          </div>
+          <span class="status-badge ${isExpired ? 'expired' : 'active'}">
+            ${isExpired ? 'Expired' : 'Active'}
+          </span>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // Re-render every second so "Active"/"Expired" status updates live
+  setInterval(render, 1000);
+</script>
+</body>
+</html>
